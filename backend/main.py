@@ -3,7 +3,20 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import requests
 import pandas as pd
+import nltk
+from pprint import pprint
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.sentiment import SentimentIntensityAnalyzer
+import string
 
+sia = SentimentIntensityAnalyzer()
+nltk.download([
+     "stopwords",
+ ])
+
+# Initialize the stopwords
+stop_words = set(stopwords.words('english'))
 
 app = FastAPI()
 
@@ -18,6 +31,22 @@ app = FastAPI()
 market_to_url = {
     "tech": "https://news.google.com/rss/search?q=when:24h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en",
 }
+def preprocess_data(title):
+    # Tokenize the title
+    words = word_tokenize(title)
+
+    # Remove stopwords and punctuation
+    words = [word for word in words if word not in stop_words and word not in string.punctuation]
+
+    # Convert the words to lowercase
+    words = [word.lower() for word in words]
+
+    # Join the words back into a string
+    preprocessed_title = ' '.join(words)
+
+ 
+    return preprocessed_title
+
 
 def fetch_xml_data(market: str) -> bytes:
     # Get the XML feed URL corresponding to the specified market
@@ -49,9 +78,19 @@ async def invest(request: Request):
     
     df = pd.read_xml(xml, xpath=".//item")
 
-    df['title']
-    print(df['title'])
-    return ""
+    titles = df['title'].values
+    scores_dict = {}
+    for title in titles:
+        # tokenize each title
+        pre = preprocess_data(title)
+        # get the score
+        scores = sia.polarity_scores(pre)
+        scores_dict[pre] = scores
+    print(scores_dict)
+
+    return scores_dict
+
+ 
 
 if __name__ == "__main__":
     import uvicorn
