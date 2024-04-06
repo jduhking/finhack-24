@@ -4,11 +4,12 @@ import json
 import requests
 import pandas as pd
 import nltk
-from pprint import pprint
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.sentiment import SentimentIntensityAnalyzer
 import string
+import numpy as np
+from scipy.special import softmax
 
 sia = SentimentIntensityAnalyzer()
 nltk.download([
@@ -28,11 +29,15 @@ app = FastAPI()
 #     allow_headers=["*"],
 # )
 
+positive_threshold = 0.7
+negative_threshold = 0.3
+
 url_to_feed = {
-"https://news.google.com/rss/search?q=when:720h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en" : "bloomberg"
+"https://news.google.com/rss/search?q=when:24h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en" : "bloomberg",
+"https://news.google.com/rss/search?q=when:24h+allinurl:cnbc.com&hl=en-US&gl=US&ceid=US:en" : "cnbc"
 }
 market_to_urls = {
-    "tech": ["https://news.google.com/rss/search?q=when:720h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en"],
+    "tech": ["https://news.google.com/rss/search?q=when:24h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en", "https://news.google.com/rss/search?q=when:24h+allinurl:cnbc.com&hl=en-US&gl=US&ceid=US:en"],
 }
 
 market_to_companies = {
@@ -65,8 +70,43 @@ def preprocess_tokens(title):
     words = [word.lower() for word in words]
     return words
 
+# normalize sentiment scores: use the softmax function to 
+# convert raw sentiment scores into probabilities, ensuring comparability
 
+def normalize_sentiments(sentiment_data):
+    normalized_sentiments = {}
+    for key, values in sentiment_data.items():
+        # Extract Bloomberg and CNBC sentiment scores
+        bloomberg_score = values[0]
+        cnbc_score = values[1]
 
+        # Apply softmax normalization
+        scores = np.array([bloomberg_score, cnbc_score])
+        normalized_scores = softmax(scores)
+
+        # Store normalized scores
+        normalized_sentiments[key] = normalized_scores.tolist()
+
+    return normalized_sentiments
+
+""" step 2: Aggregate scores , calculate the average or a weighted average of these
+normalized scores across multiple texts, based on their importance"""
+
+def aggregate_scores(normalized_data):
+    aggregated_dict = {}
+    for key, values in normalized_data.items():
+        aggregated_scores = np.mean(values)
+        aggregated_dict[key] = aggregated_scores
+
+    return aggregated_dict
+
+def categorize_sentiment(aggregated_scores, positive_threshold, negative_threshold):
+    if aggregated_scores[0] >= positive_threshold:
+        return 'Positive'
+    elif aggregated_scores[0] <= negative_threshold:
+        return 'Negative'
+    else:
+        return 'Neutral'
 
 def fetch_xml_data(url) -> bytes:
     # Get the XML feed URL corresponding to the specified market
@@ -120,7 +160,10 @@ async def invest(request: Request):
     
         # store it at the dict for that feed
         feed_to_headlines[url_to_feed[url]] = headlines_to_company
-    
+
+    company_to_sentiment = {
+
+    }
     for company in companies:
         # determine the overall sentiment for it
         # calculate the total sentiment from each rss feed 
@@ -135,13 +178,29 @@ async def invest(request: Request):
                 scores = sia.polarity_scores(headline)["compound"]
                 total_score += scores
                 count += 1
-            avg = total_score / count
+            if count == 0:
+                avg = 0
+            else: 
+                avg = total_score / count
             # now with the total score we have the sentiment for that feed
             sentiments.append(avg)
-        print(sentiments)
+        company_to_sentiment[company] = sentiments
+
+    # normalize the sentiments
+
+    print("total sentiments", company_to_sentiment)
+    company_to_sentiments_normalized = normalize_sentiments(company_to_sentiment)
+    
+    print("normalized sentiments" , company_to_sentiments_normalized)
+    # aggregate the probabilities across multiple feeds
+
+    aggregated_scores = aggregate_scores(company_to_sentiments_normalized)
 
 
-        
+    # categorize sentiment, based on the thresholds assign each aggregated score to its respective category
+
+    print(aggregated_scores)
+
 
     # now for each company determine the overall sentiment for it 
     return ""
