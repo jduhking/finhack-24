@@ -207,10 +207,13 @@ async def invest(request: Request):
         company_to_sentiment[company] = sentiments
         print(feed_to_company_to_sentiment_date)
 
-    print(company_to_sentiment)
+    res = {
+        "timeline" : feed_to_company_to_sentiment_date,
+        "sentiments" : company_to_sentiment
+    }
 
     # now for each company determine the overall sentiment for it 
-    return ""
+    return res
 
             #  scores = sia.polarity_scores(pre)
             # scores_dict[pre] = scores
