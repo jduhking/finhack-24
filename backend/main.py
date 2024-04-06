@@ -2,18 +2,18 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import requests
-from lxml import etree
+
 
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=origins,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 
 def fetch_xml_data(market: str) -> str:
@@ -23,7 +23,7 @@ def fetch_xml_data(market: str) -> str:
     }
     # get the xml feed url corresponding to the specified market
 
-    xml_url = market_to_url(market)
+    xml_url = market_to_url[market]
 
     if not xml_url:
         raise HTTPException(status_code=404, detail="XML feed URL not found for market")
@@ -45,6 +45,11 @@ async def root():
 async def invest(request: Request):
     """ get the payload and get the strategy and then the market """
     payload = json.loads(await request.body())
-    print(payload)
+    strategy = payload["strategy"]
+    market = payload["market"]
+
+    xml = fetch_xml_data(market)
+
+    print(xml)
 
 
