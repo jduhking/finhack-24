@@ -28,12 +28,15 @@ app = FastAPI()
 #     allow_headers=["*"],
 # )
 
+url_to_feed = {
+"https://news.google.com/rss/search?q=when:720h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en" : "bloomberg"
+}
 market_to_urls = {
-    "tech": ["https://news.google.com/rss/search?q=when:336h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en",],
+    "tech": ["https://news.google.com/rss/search?q=when:720h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en"],
 }
 
 market_to_companies = {
-    "tech" : ["microsoft", "apple", "nvidia", "google", "amazon" ]
+    "tech" : ["meta", "apple", "nvidia", "google", "amazon" ]
 }
 def preprocess_data(title):
     # Tokenize the title
@@ -93,6 +96,8 @@ async def invest(request: Request):
     xml_urls = market_to_urls.get(market)
     companies = market_to_companies.get(market)
 
+    feed_to_headlines = {}
+
     for url in xml_urls:
         xml = fetch_xml_data(url)
         df = pd.read_xml(xml, xpath=".//item")
@@ -111,9 +116,34 @@ async def invest(request: Request):
                 for company in companies:
                     if token == company:
                         headlines_to_company[company].append(headline)
-            
-        print(headlines_to_company)
+    
+    
+        # store it at the dict for that feed
+        feed_to_headlines[url_to_feed[url]] = headlines_to_company
+    
+    for company in companies:
+        # determine the overall sentiment for it
+        # calculate the total sentiment from each rss feed 
+        print(company)
+        sentiments = []
+        for feed in feed_to_headlines:
+            headlines = feed_to_headlines[feed][company]
+            total_score = 0
+            count = 0
+            # now calculate the total sentiment for each feed
+            for headline in headlines:
+                scores = sia.polarity_scores(headline)["compound"]
+                total_score += scores
+                count += 1
+            avg = total_score / count
+            # now with the total score we have the sentiment for that feed
+            sentiments.append(avg)
+        print(sentiments)
 
+
+        
+
+    # now for each company determine the overall sentiment for it 
     return ""
 
             #  scores = sia.polarity_scores(pre)
