@@ -32,17 +32,11 @@ app = FastAPI()
 positive_threshold = 0.7
 negative_threshold = 0.3
 
-url_to_feed = {
-"https://news.google.com/rss/search?q=when:24h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en" : "bloomberg",
-"https://news.google.com/rss/search?q=when:24h+allinurl:cnbc.com&hl=en-US&gl=US&ceid=US:en" : "cnbc"
-}
-market_to_urls = {
-    "tech": ["https://news.google.com/rss/search?q=when:24h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en", "https://news.google.com/rss/search?q=when:24h+allinurl:cnbc.com&hl=en-US&gl=US&ceid=US:en"],
-}
-
 market_to_companies = {
     "tech" : ["meta", "apple", "nvidia", "google", "amazon" ]
 }
+
+
 def preprocess_data(title):
     # Tokenize the title
     words = word_tokenize(title)
@@ -132,6 +126,15 @@ async def invest(request: Request):
     payload = json.loads(await request.body())
     strategy = payload["strategy"]
     market = payload["market"]
+    range = payload["range"]
+
+    url_to_feed = {
+    f"https://news.google.com/rss/search?q=when:{range}h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en" : "bloomberg",
+    f"https://news.google.com/rss/search?q=when:{range}h+allinurl:cnbc.com&hl=en-US&gl=US&ceid=US:en" : "cnbc"
+    }
+    market_to_urls = {
+        "tech": [f"https://news.google.com/rss/search?q=when:{range}h+allinurl:bloomberg.com&hl=en-US&gl=US&ceid=US:en", f"https://news.google.com/rss/search?q=when:{range}h+allinurl:cnbc.com&hl=en-US&gl=US&ceid=US:en"],
+    }
 
     xml_urls = market_to_urls.get(market)
     companies = market_to_companies.get(market)
@@ -141,29 +144,45 @@ async def invest(request: Request):
     for url in xml_urls:
         xml = fetch_xml_data(url)
         df = pd.read_xml(xml, xpath=".//item")
-        titles = df['title'].values
+        t = df['title'].values
+        d = df['pubDate'].values
+        preprocessed_titles = [preprocess_data(title) for title in t]
+        data = {
+            'title': preprocessed_titles,
+            'pubDate': d
+        }
+        new_df = pd.DataFrame(data)
+        titles = new_df['title'].values
+        dates = new_df['pubDate'].values
         # for each headline, map it to a company
-        headlines_to_company = {}
+        headlines_to_company = {
+            company: [] for company in companies
+            }
+        print(new_df)
         for company in companies:
             headlines_to_company[company] = []
-        scores_dict = {}
-        for title in titles:
-            # tokenize each title
-            tokens = preprocess_tokens(title)
-            headline = preprocess_data(title)
+    
+        for title, date in zip(titles, dates):
             # check each of the words and see if they contain any of our companies, if not discard
+            tokens = preprocess_tokens(title)
             for token in tokens:
                 for company in companies:
                     if token == company:
-                        headlines_to_company[company].append(headline)
-    
-    
+                        headlines_to_company[company].append({ "headline" : title, 
+                                                                "date" : date })
+        print(headlines_to_company)
+        
+
         # store it at the dict for that feed
         feed_to_headlines[url_to_feed[url]] = headlines_to_company
-
     company_to_sentiment = {
 
     }
+    feed_to_company_to_sentiment_date = {
+    feed_key: {company: [] for company in companies}
+    for feed_key in feed_to_headlines.keys()
+}
+    print(feed_to_company_to_sentiment_date)
     for company in companies:
         # determine the overall sentiment for it
         # calculate the total sentiment from each rss feed 
@@ -175,32 +194,20 @@ async def invest(request: Request):
             count = 0
             # now calculate the total sentiment for each feed
             for headline in headlines:
-                scores = sia.polarity_scores(headline)["compound"]
+                scores = sia.polarity_scores(headline['headline'])["compound"]
+                feed_to_company_to_sentiment_date[feed][company].append({ "score" : scores, "date": headline['date'] })
                 total_score += scores
                 count += 1
             if count == 0:
                 avg = 0
             else: 
                 avg = total_score / count
-            # now with the total score we have the sentiment for that feed
             sentiments.append(avg)
+            # now with the total score we have the sentiment for that feed
         company_to_sentiment[company] = sentiments
+        print(feed_to_company_to_sentiment_date)
 
-    # normalize the sentiments
-
-    print("total sentiments", company_to_sentiment)
-    company_to_sentiments_normalized = normalize_sentiments(company_to_sentiment)
-    
-    print("normalized sentiments" , company_to_sentiments_normalized)
-    # aggregate the probabilities across multiple feeds
-
-    aggregated_scores = aggregate_scores(company_to_sentiments_normalized)
-
-
-    # categorize sentiment, based on the thresholds assign each aggregated score to its respective category
-
-    print(aggregated_scores)
-
+    print(company_to_sentiment)
 
     # now for each company determine the overall sentiment for it 
     return ""
